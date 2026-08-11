@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     clerk_publishable_key: str = ""
     clerk_secret_key: str = ""
     clerk_jwks_url: str = ""
+    # Origins allowed to present a Clerk session token (checked against the `azp` claim)
+    clerk_authorized_parties: list[str] = ["http://localhost:5173"]
 
     # Cost controls
     daily_session_limit_minutes: int = 30
