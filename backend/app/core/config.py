@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     # Azure AI Speech (STT + Pronunciation Assessment + TTS)
     azure_speech_key: str = ""
     azure_speech_region: str = ""
+    azure_speech_language: str = "en-US"
+    azure_tts_voice: str = "en-US-AriaNeural"
 
     # Clerk (auth)
     clerk_publishable_key: str = ""

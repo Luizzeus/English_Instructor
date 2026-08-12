@@ -74,10 +74,22 @@ Se o app do Clerk estiver configurado para múltiplas origens além de `http://l
 
 Um cenário completo está funcional de ponta a ponta: "Small talk profissional" (papo antes de uma reunião remota começar). Fluxo: `POST /api/sessions` (inicia sessão, bot manda a mensagem de abertura) → `POST /api/sessions/{id}/messages` (aluno responde, backend monta o histórico completo e chama Claude com um system prompt adaptado ao nível CEFR do aluno, aplicando correção implícita via recast) → `POST /api/sessions/{id}/end`. UI de chat em `frontend/src/Chat.tsx`, serviço de conversação em `backend/app/services/conversation.py`.
 
+## Camada de voz (Azure AI Speech)
+
+Ao iniciar uma sessão com "Iniciar por voz", o botão 🎤 grava o microfone (Web Audio API, sem dependências externas), encoda como WAV 16 kHz/16-bit/mono no navegador (`frontend/src/lib/wavRecorder.ts`) e envia para `POST /api/sessions/{id}/voice-messages` (multipart). O backend (`backend/app/services/speech.py`):
+
+1. Transcreve e avalia a pronúncia em modo *unscripted* (sem texto de referência — o aluno fala livremente, não repete um script), retornando scores de precisão, fluência, completude e pronúncia (0-100).
+2. Gera a resposta do bot com o mesmo serviço de conversação do fluxo em texto.
+3. Sintetiza a resposta em áudio (voz neural do Azure) e devolve como base64; o frontend toca automaticamente.
+
+Configuração necessária: `AZURE_SPEECH_KEY` + `AZURE_SPEECH_REGION` no `.env` do backend (conta no [portal.azure.com](https://portal.azure.com), recurso "Speech"). Sem essas chaves, os endpoints de voz respondem com erro — não há fallback silencioso.
+
+**Limitação conhecida:** não há credenciais reais do Azure Speech configuradas neste ambiente de desenvolvimento, então o fluxo foi validado com a integração mockada (`backend/tests/test_voice_flow.py`) — a qualidade real da transcrição/avaliação/síntese contra a API do Azure ainda não foi verificada manualmente.
+
 ## Variáveis de ambiente sensíveis
 
 Nenhum `.env` é versionado (ver `.gitignore`) — apenas os `.env.example`. Chaves de Anthropic, Azure Speech e Clerk ficam só localmente ou em secrets do ambiente de deploy.
 
 ## Estado atual
 
-Backend FastAPI com modelo de dados completo (SQLAlchemy + Alembic), auth Clerk integrada de ponta a ponta, e um protótipo funcional do bot de conversação em texto (um cenário completo, testado automaticamente). Ainda não implementados: camada de voz, métricas de evolução, promoção de nível CEFR, recomendação de ferramentas, repetição espaçada, gamificação. Backlog priorizado em `docs/architecture.md` (seção 5).
+Backend FastAPI com modelo de dados completo (SQLAlchemy + Alembic), auth Clerk integrada de ponta a ponta, protótipo funcional do bot de conversação em texto e voz (um cenário completo, testado automaticamente com Anthropic/Azure mockados). Ainda não implementados: métricas de evolução, promoção de nível CEFR, recomendação de ferramentas, repetição espaçada, gamificação. Backlog priorizado em `docs/architecture.md` (seção 5).

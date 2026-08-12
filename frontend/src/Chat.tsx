@@ -1,13 +1,24 @@
 import { useAuth } from '@clerk/clerk-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
+  base64AudioToObjectUrl,
   endSession,
   listScenarios,
   sendMessage,
+  sendVoiceMessage,
   startSession,
   type ConversationSession,
   type Scenario,
 } from './lib/api'
+import { WavRecorder } from './lib/wavRecorder'
+
+function PronunciationBadge({ scores }: { scores: NonNullable<ConversationSession['messages'][number]['pronunciation_scores']> }) {
+  return (
+    <span style={{ fontSize: '0.8em', color: '#555', marginLeft: '0.5rem' }}>
+      (pronúncia: {Math.round(scores.pronunciation)}/100 · fluência: {Math.round(scores.fluency)}/100)
+    </span>
+  )
+}
 
 export function Chat() {
   const { getToken } = useAuth()
@@ -15,7 +26,9 @@ export function Chat() {
   const [session, setSession] = useState<ConversationSession | null>(null)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+  const [recording, setRecording] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const recorderRef = useRef<WavRecorder | null>(null)
 
   useEffect(() => {
     getToken().then((token) => {
@@ -24,13 +37,13 @@ export function Chat() {
     })
   }, [getToken])
 
-  async function handleStart(scenario: Scenario) {
+  async function handleStart(scenario: Scenario, modality: 'text' | 'voice') {
     setError(null)
     setBusy(true)
     try {
       const token = await getToken()
       if (!token) return
-      const newSession = await startSession(token, scenario.id)
+      const newSession = await startSession(token, scenario.id, modality)
       setSession(newSession)
     } catch {
       setError('Não foi possível iniciar a sessão.')
@@ -52,6 +65,44 @@ export function Chat() {
       setSession({ ...session, messages: [...session.messages, student_message, bot_message] })
     } catch {
       setError('Não foi possível enviar a mensagem.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleStartRecording() {
+    setError(null)
+    try {
+      recorderRef.current = await WavRecorder.start()
+      setRecording(true)
+    } catch {
+      setError('Não foi possível acessar o microfone.')
+    }
+  }
+
+  async function handleStopRecording() {
+    if (!session || !recorderRef.current) return
+    setRecording(false)
+    setBusy(true)
+    try {
+      const audioBlob = await recorderRef.current.stop()
+      recorderRef.current = null
+
+      const token = await getToken()
+      if (!token) return
+      const { student_message, bot_message, bot_audio_base64 } = await sendVoiceMessage(
+        token,
+        session.id,
+        audioBlob,
+      )
+      setSession({ ...session, messages: [...session.messages, student_message, bot_message] })
+
+      const audioUrl = base64AudioToObjectUrl(bot_audio_base64)
+      new Audio(audioUrl).play().catch(() => {
+        /* autoplay can be blocked by the browser — the student can still read the reply */
+      })
+    } catch {
+      setError('Não foi possível processar o áudio.')
     } finally {
       setBusy(false)
     }
@@ -81,8 +132,11 @@ export function Chat() {
           <div key={scenario.id} style={{ marginBottom: '1rem' }}>
             <strong>{scenario.name}</strong>
             <p>{scenario.description}</p>
-            <button type="button" disabled={busy} onClick={() => handleStart(scenario)}>
-              Iniciar conversa
+            <button type="button" disabled={busy} onClick={() => handleStart(scenario, 'text')}>
+              Iniciar por texto
+            </button>{' '}
+            <button type="button" disabled={busy} onClick={() => handleStart(scenario, 'voice')}>
+              Iniciar por voz
             </button>
           </div>
         ))}
@@ -92,6 +146,7 @@ export function Chat() {
   }
 
   const isActive = session.status === 'active'
+  const isVoice = session.modality === 'voice'
 
   return (
     <div>
@@ -100,6 +155,7 @@ export function Chat() {
         {session.messages.map((m) => (
           <p key={m.id}>
             <strong>{m.author === 'bot' ? 'Bot' : 'Você'}:</strong> {m.text}
+            {m.pronunciation_scores && <PronunciationBadge scores={m.pronunciation_scores} />}
           </p>
         ))}
       </div>
@@ -117,6 +173,16 @@ export function Chat() {
           <button type="button" disabled={busy || !draft.trim()} onClick={handleSend}>
             Enviar
           </button>
+          {isVoice && !recording && (
+            <button type="button" disabled={busy} onClick={handleStartRecording}>
+              🎤 Gravar
+            </button>
+          )}
+          {isVoice && recording && (
+            <button type="button" onClick={handleStopRecording}>
+              ⏹ Parar e enviar
+            </button>
+          )}
           <button type="button" disabled={busy} onClick={handleEnd}>
             Encerrar
           </button>

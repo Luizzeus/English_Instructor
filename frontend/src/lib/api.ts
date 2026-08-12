@@ -18,11 +18,19 @@ export interface Scenario {
   tags: string[]
 }
 
+export interface PronunciationScores {
+  accuracy: number
+  fluency: number
+  completeness: number
+  pronunciation: number
+}
+
 export interface Message {
   id: number
   author: 'student' | 'bot'
   text: string
   created_at: string
+  pronunciation_scores: PronunciationScores | null
 }
 
 export interface ConversationSession {
@@ -69,10 +77,14 @@ export async function listScenarios(token: string): Promise<Scenario[]> {
   return parseOrThrow(res, 'Failed to list scenarios')
 }
 
-export async function startSession(token: string, scenarioId: number): Promise<ConversationSession> {
+export async function startSession(
+  token: string,
+  scenarioId: number,
+  modality: 'text' | 'voice' = 'text',
+): Promise<ConversationSession> {
   const res = await authedFetch('/sessions', token, {
     method: 'POST',
-    body: JSON.stringify({ scenario_id: scenarioId }),
+    body: JSON.stringify({ scenario_id: scenarioId, modality }),
   })
   return parseOrThrow(res, 'Failed to start session')
 }
@@ -92,6 +104,35 @@ export async function sendMessage(
 export async function endSession(token: string, sessionId: number): Promise<ConversationSession> {
   const res = await authedFetch(`/sessions/${sessionId}/end`, token, { method: 'POST' })
   return parseOrThrow(res, 'Failed to end session')
+}
+
+export interface SendVoiceMessageResult {
+  student_message: Message
+  bot_message: Message
+  bot_audio_base64: string
+}
+
+export async function sendVoiceMessage(
+  token: string,
+  sessionId: number,
+  audioBlob: Blob,
+): Promise<SendVoiceMessageResult> {
+  const formData = new FormData()
+  formData.append('audio', audioBlob, 'recording.wav')
+
+  // Deliberately not using authedFetch here: it forces Content-Type: application/json,
+  // but multipart bodies need the browser to set Content-Type itself (with the boundary).
+  const res = await fetch(`${API_BASE_URL}/sessions/${sessionId}/voice-messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  })
+  return parseOrThrow(res, 'Failed to send voice message')
+}
+
+export function base64AudioToObjectUrl(base64: string, mimeType = 'audio/wav'): string {
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+  return URL.createObjectURL(new Blob([bytes], { type: mimeType }))
 }
 
 export { API_BASE_URL }

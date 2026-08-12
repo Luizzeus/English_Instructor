@@ -7,6 +7,7 @@ from app.models.enums import MessageAuthor, SessionModality, SessionStatus
 
 class SessionCreateRequest(BaseModel):
     scenario_id: int
+    modality: SessionModality = SessionModality.TEXT
 
 
 class MessageOut(BaseModel):
@@ -16,6 +17,7 @@ class MessageOut(BaseModel):
     author: MessageAuthor
     text: str
     created_at: datetime
+    pronunciation_scores: dict[str, float] | None = None
 
 
 class SessionOut(BaseModel):
@@ -37,3 +39,9 @@ class SendMessageRequest(BaseModel):
 class SendMessageResponse(BaseModel):
     student_message: MessageOut
     bot_message: MessageOut
+
+
+class SendVoiceMessageResponse(BaseModel):
+    student_message: MessageOut
+    bot_message: MessageOut
+    bot_audio_base64: str
