@@ -10,8 +10,8 @@ class Settings(BaseSettings):
     environment: str = "development"
     cors_origins: list[str] = ["http://localhost:5173"]
 
-    # SQL Server
-    database_url: str = "mssql+pyodbc://localhost/EnglishInstructor?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes"
+    # PostgreSQL (open-source, self-hosted — see docs/architecture.md section 1.1)
+    database_url: str = "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/english_instructor"
 
     # Anthropic (conversation bot)
     anthropic_api_key: str = ""

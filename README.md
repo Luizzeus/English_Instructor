@@ -2,14 +2,14 @@
 
 Aplicativo de ensino de inglês focado em conversação, com bot de IA adaptado ao nível CEFR do aluno, métricas de evolução e simulações de cenários do cotidiano. Decisões de arquitetura, riscos e modelo de dados: [`docs/architecture.md`](docs/architecture.md).
 
-Stack: FastAPI (backend) + React/TypeScript (frontend) + SQL Server + Claude (bot de conversação) + Azure AI Speech (STT/pronúncia/TTS) + Clerk (auth).
+**Stack 100% open-source / custo zero** (pivô decidido em 2026-08-12, ver seção 1.1 do doc de arquitetura): FastAPI (backend) + React/TypeScript (frontend) + **PostgreSQL** (self-hosted). Bot de conversação, autenticação e voz estão em migração de Claude/Clerk/Azure para Ollama/`fastapi-users`/faster-whisper+Piper — nesta fase intermediária, o `.env` ainda tem as chaves antigas (Anthropic/Clerk/Azure) enquanto a migração dessas peças não termina.
 
 ## Pré-requisitos
 
 - Python 3.12+ (testado em 3.14)
 - Node.js 20+
-- SQL Server acessível (local ou remoto) + [ODBC Driver 18 for SQL Server](https://learn.microsoft.com/sql/connect/odbc/download-odbc-driver-for-sql-server) instalado
-- Chaves de API: Anthropic, Azure Speech, Clerk (não obrigatórias para subir o scaffold — só para as features que as usam)
+- Docker (para rodar o PostgreSQL local)
+- Chaves de API: Anthropic, Azure Speech, Clerk (não obrigatórias para subir o scaffold — só para as features que ainda dependem delas até a migração terminar)
 
 ## Backend (`backend/`)
 
@@ -21,7 +21,17 @@ pip install -r requirements.txt
 cp .env.example .env           # preencher DATABASE_URL e as chaves de API
 ```
 
-Com `DATABASE_URL` apontando para uma instância SQL Server real:
+Suba o PostgreSQL local via Docker (se ainda não tiver um rodando):
+
+```bash
+docker run -d --name english-instructor-pg \
+  -e POSTGRES_PASSWORD=SUA_SENHA \
+  -e POSTGRES_DB=english_instructor \
+  -p 5432:5432 \
+  postgres:17-alpine
+```
+
+Com `DATABASE_URL` apontando para essa instância:
 
 ```bash
 alembic revision --autogenerate -m "initial schema"
@@ -37,7 +47,7 @@ uvicorn app.main:app --reload
 
 Health check: `GET http://localhost:8000/api/health`
 
-Rodar os testes (não precisam de SQL Server nem de chave da Anthropic — usam SQLite in-memory e mockam a chamada ao LLM):
+Rodar os testes (não precisam de Postgres nem de chave da Anthropic — usam SQLite in-memory e mockam a chamada ao LLM):
 
 ```bash
 pip install -r requirements-dev.txt
@@ -102,4 +112,4 @@ Nenhum `.env` é versionado (ver `.gitignore`) — apenas os `.env.example`. Cha
 
 ## Estado atual
 
-Backend FastAPI com modelo de dados completo (SQLAlchemy + Alembic), auth Clerk integrada de ponta a ponta, protótipo funcional do bot de conversação em texto e voz (um cenário completo), e cálculo automático de 3 métricas de evolução por sessão com dashboard básico — tudo testado automaticamente (14 testes, Anthropic/Azure mockados). Ainda não implementados: promoção de nível CEFR, recomendação de ferramentas, repetição espaçada, gamificação. Backlog priorizado em `docs/architecture.md` (seção 5).
+Backend FastAPI com modelo de dados completo (SQLAlchemy + Alembic, agora em **PostgreSQL**), protótipo funcional do bot de conversação em texto e voz (um cenário completo), e cálculo automático de 3 métricas de evolução por sessão com dashboard básico — tudo testado automaticamente (15 testes). **Migração em andamento (2026-08-12) para stack 100% open-source/custo zero** (ver `docs/architecture.md` seção 1.1): banco já migrado para PostgreSQL; LLM (Claude → Ollama local), autenticação (Clerk → `fastapi-users`) e voz (Azure Speech → faster-whisper + Piper) ainda pendentes, nessa ordem. Ainda não implementados: promoção de nível CEFR, recomendação de ferramentas, repetição espaçada, gamificação. Backlog priorizado em `docs/architecture.md` (seção 5).

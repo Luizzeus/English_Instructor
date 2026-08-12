@@ -1,46 +1,64 @@
 # Arquitetura — Instrutor de Inglês com IA (Foco em Conversação)
 
-Status: decisões estruturais validadas em 2026-08-11. Este documento é vivo — atualizar a cada decisão nova, não só ao final.
+Status: decisões estruturais validadas em 2026-08-11, **revisadas em 2026-08-12** (ver seção 1.1 — pivô para stack 100% open-source/$0). Este documento é vivo — atualizar a cada decisão nova, não só ao final.
 
-## 1. Decisões estruturais (seção 5 do briefing)
+## 1. Decisões estruturais originais (seção 5 do briefing) — histórico
 
-| # | Decisão | Escolha | Justificativa |
+Tabela mantida como registro histórico da primeira versão. **Ver seção 1.1 para as decisões vigentes** — LLM, auth, voz e banco foram todos substituídos.
+
+| # | Decisão | Escolha original | Justificativa |
 |---|---|---|---|
 | 1 | Plataforma-alvo | Web app (PWA) | Deploy único, instalável no celular via browser, sem fricção de app store. Sessões curtas (5-20min) cabem bem no browser mobile. Mobile nativo fica para fase 2 se houver tração. |
 | 2 | Backend | Python + FastAPI | Ecossistema de IA/NLP mais maduro (SDK Anthropic, spaCy para complexidade sintática, integração com STT/TTS) do que .NET/Java para este domínio. |
 | 2 | Frontend | React + TypeScript | Padrão de mercado para chat/dashboard interativo; ecossistema maduro de componentes de áudio/streaming. |
-| 3 | LLM de conversação | Claude (Sonnet) via API Anthropic | Bom custo/benefício; segue system prompts complexos (persona, nível CEFR, correção implícita via recast) de forma confiável. |
-| 3 | STT + avaliação de pronúncia/fluência | Azure AI Speech | API dedicada de *Pronunciation Assessment* (precisão, fluência, completude) — cobre diretamente as métricas da seção 3.2 sem precisar construir essa lógica do zero. |
-| 3 | TTS | Azure Neural TTS | Mesmo serviço da Azure Speech, vozes naturais, custo previsível e integração única. |
-| 4 | Armazenamento primário | SQL Server | Modelo relacional claro (aluno, sessão, métrica, cenário, exercício, recomendação); facilita queries agregadas/históricas para a lógica auditável de promoção de nível CEFR. |
-| 4 | Transcrições de conversa | Coluna JSON no SQL Server | Evita persistência poliglota prematura no MVP. Migração para MongoDB só se volume/flexibilidade justificarem depois. |
-| 5 | Autenticação | Clerk (provedor gerenciado) | Multiusuário exige auth robusto (MFA, login social, proteção contra brute-force). Clerk tem SDK React de primeira classe e verificação de JWT simples no FastAPI. Free tier cobre o MVP. |
-| 6 | Modelo de custo | Free tier com limite rígido, sem cobrança ainda | Sem gateway de pagamento no MVP. Foco em validar o produto; monetização entra depois de validação. |
+| 3 | LLM de conversação | ~~Claude (Sonnet) via API Anthropic~~ → **substituído**, ver 1.1 | Bom custo/benefício; segue system prompts complexos (persona, nível CEFR, correção implícita via recast) de forma confiável. |
+| 3 | STT + avaliação de pronúncia/fluência | ~~Azure AI Speech~~ → **substituído**, ver 1.1 | API dedicada de *Pronunciation Assessment* (precisão, fluência, completude) — cobre diretamente as métricas da seção 3.2 sem precisar construir essa lógica do zero. |
+| 3 | TTS | ~~Azure Neural TTS~~ → **substituído**, ver 1.1 | Mesmo serviço da Azure Speech, vozes naturais, custo previsível e integração única. |
+| 4 | Armazenamento primário | ~~SQL Server~~ → **substituído**, ver 1.1 | Modelo relacional claro (aluno, sessão, métrica, cenário, exercício, recomendação); facilita queries agregadas/históricas para a lógica auditável de promoção de nível CEFR. |
+| 4 | Transcrições de conversa | Coluna JSON no banco relacional | Evita persistência poliglota prematura no MVP. Migração para MongoDB só se volume/flexibilidade justificarem depois. Continua válido com Postgres (JSONB). |
+| 5 | Autenticação | ~~Clerk (provedor gerenciado)~~ → **substituído**, ver 1.1 | Multiusuário exige auth robusto (MFA, login social, proteção contra brute-force). Clerk tem SDK React de primeira classe e verificação de JWT simples no FastAPI. Free tier cobre o MVP. |
+| 6 | Modelo de custo | Free tier com limite rígido, sem cobrança ainda | Sem gateway de pagamento no MVP. Foco em validar o produto; monetização entra depois de validação. Reforçado pela seção 1.1: nenhum recurso pago é aceitável agora. |
+
+## 1.1 Revisão 2026-08-12: pivô para stack open-source / custo zero
+
+**Motivo:** o usuário definiu explicitamente que não pretende fazer nenhum investimento monetário no projeto no momento, e que os recursos usados devem ser open-source. SQL Server, Claude API, Clerk e Azure AI Speech são todos proprietários e/ou pagos (mesmo com free tiers generosos, representam risco de custo e vendor lock-in incompatíveis com essa restrição). Máquina de desenvolvimento: Intel i7-1185G7 (4 núcleos/8 threads), 31GB RAM, **sem GPU dedicada** (só Iris Xe integrada) — isso limitou a recomendação de LLM local a modelos menores rodando em CPU.
+
+| # | Componente | Decisão revisada | Licença/custo | Justificativa |
+|---|---|---|---|---|
+| 4 | Banco de dados | **PostgreSQL** (self-hosted via Docker) | PostgreSQL License (permissiva), $0 | Substituto direto do SQL Server, suporte excelente no SQLAlchemy, JSONB nativo. Migração de baixo esforço — os modelos já usavam `Enum(native_enum=False)` e tipos portáveis. |
+| 3 | LLM de conversação | **Ollama + modelo open-weight local** (Mistral 7B ou Qwen2.5 7B, Apache 2.0) | Apache 2.0, $0, 100% local | Trade-off aceito explicitamente pelo usuário: sem GPU, inferência via CPU é sensivelmente mais lenta (segundos por resposta, não fração de segundo) e a qualidade de adaptação ao CEFR/correção implícita é mais fraca que a do Sonnet. Aceitável para validar o produto agora; código do provedor Anthropic é mantido atrás de uma interface trocável, não descartado, para retomar depois se o usuário decidir investir. |
+| 5 | Autenticação | **`fastapi-users`** (biblioteca Python, embutida no backend) | MIT, $0, sem serviço extra | Preferido a um IdP self-hosted completo (Authentik/Keycloak) por ter menos peças rodando — alinhado a um projeto pessoal sem operação dedicada. Custo: perde os componentes de UI prontos do Clerk (modal de login), precisa de tela de login própria no frontend. |
+| 3 | STT | **faster-whisper** (self-hosted, CPU) | MIT, $0 | Equivalente open-source direto para transcrição; roda razoavelmente bem em CPU com modelos menores (`base`/`small`). |
+| 3 | TTS | **Piper** (self-hosted, leve) | MIT, $0 | Boa qualidade para o caso de uso, leve o suficiente para CPU. |
+| 3 | Avaliação de pronúncia | **Sem equivalente open-source maduro** — métrica simplificada ou temporariamente fora do escopo | — | Diferente de STT/TTS, a *pronunciation assessment* unscripted da Azure não tem substituto open-source direto. Registrado como limitação conhecida, não forçado com uma solução frágil. |
+
+**Ordem de execução acordada com o usuário:** banco → LLM → autenticação → voz, migrando e testando cada peça isoladamente antes de seguir para a próxima (mesmo ritmo usado no resto do projeto).
 
 ## 2. Riscos técnicos identificados (sinalizar cedo, não só no final)
 
-- **Custo de IA em escala**: bot de conversação (Claude) + STT/TTS (Azure) por sessão. Precisa de tracking de tokens/segundos por usuário desde o dia 1, com hard cap diário — não é opcional dado o modelo "free tier sem cobrança".
-- **Latência de voz**: pipeline completo é STT → LLM → TTS. Cada etapa soma latência; meta realista para turno de voz é ~3-5s (mais alta que texto puro, que mira 2-3s). Precisa ser comunicado como expectativa desde o protótipo, com streaming de áudio para mitigar percepção de espera.
-- **Qualidade da correção gramatical automática**: recast implícito via LLM pode ser inconsistente; validar com casos de teste reais antes de confiar no "resumo de erros recorrentes" como métrica.
+- ~~Custo de IA em escala~~ — mitigado pelo pivô open-source (seção 1.1): sem API paga, não há custo por token/segundo a monitorar. Continua valendo monitorar *tempo de CPU* se isso vier a rodar em ambiente compartilhado.
+- **Latência do LLM local (novo, substitui o risco de latência de voz original)**: sem GPU, Ollama rodando um modelo 7B em CPU responde em segundos, não frações de segundo — pior que a Anthropic. Some isso ao pipeline de voz (STT → LLM → TTS) e a experiência de voz fica ainda mais lenta. Precisa ser comunicado como expectativa clara na UI (indicador de "pensando..."), não escondido.
+- **Qualidade da correção gramatical automática**: recast implícito via LLM pode ser inconsistente; com um modelo 7B local isso é ainda mais provável que com o Sonnet. Validar com casos de teste reais antes de confiar no "resumo de erros recorrentes" como métrica.
 - **Lógica de promoção de nível CEFR precisa ser auditável**: não pode ser um score de IA opaco — implementar como regras explícitas sobre as métricas objetivas (vocabulário ativo, taxa de erro, complexidade sintática, fluência), com o LLM apenas alimentando esses indicadores, não decidindo a promoção diretamente.
+- **Avaliação de pronúncia sem equivalente open-source maduro**: ver seção 1.1 — risco de escopo, não só técnico; pode ser necessário aceitar uma métrica mais fraca permanentemente, não só "por enquanto".
 
 ## 3. Componentes (visão de alto nível)
 
 ```
 [React PWA] --(HTTPS/WSS)--> [FastAPI backend]
-                                   |-- Clerk (auth, JWT verification)
-                                   |-- Anthropic API (Claude - bot de conversação)
-                                   |-- Azure AI Speech (STT + Pronunciation Assessment + TTS)
-                                   |-- SQL Server (dados relacionais + transcrições JSON)
+                                   |-- fastapi-users (auth, embutido no backend)
+                                   |-- Ollama local (LLM open-weight - bot de conversação)
+                                   |-- faster-whisper (STT) + Piper (TTS), self-hosted
+                                   |-- PostgreSQL (dados relacionais + transcrições JSONB)
                                    |-- Serviço de métricas (calcula CEFR, vocabulário, complexidade)
                                    |-- Serviço de recomendação (ferramentas complementares)
 ```
 
-Fluxo de voz: cliente grava áudio → upload para backend → Azure STT + Pronunciation Assessment → texto + scores → Claude gera resposta → Azure TTS → áudio retorna ao cliente (streaming quando possível).
+Fluxo de voz: cliente grava áudio → upload para backend → faster-whisper transcreve (+ avaliação de pronúncia simplificada, ver limitação na seção 1.1) → texto → Ollama gera resposta → Piper sintetiza → áudio retorna ao cliente (streaming quando possível).
 
 ## 4. Modelo de dados (rascunho — entidades principais)
 
-- **Student**: id, clerk_user_id, nome, nível CEFR atual, data de criação, preferências (tom do bot, duração padrão de sessão).
+- **Student**: id, clerk_user_id (será renomeado/generalizado quando a migração de auth para `fastapi-users` acontecer — item 4 da ordem definida na seção 1.1, ainda não executado), nome, nível CEFR atual, data de criação, preferências (tom do bot, duração padrão de sessão).
 - **Session**: id, student_id, cenário_id, início, fim, modalidade (texto/voz), status.
 - **Message**: id, session_id, autor (aluno/bot), texto, áudio_url (se houver), timestamp, correções implícitas aplicadas (recast).
 - **MetricSnapshot**: id, student_id, session_id, data, vocabulário_ativo_count, taxa_erro_por_100_palavras, palavras_por_minuto, complexidade_sintática_média, nível_cefr_estimado.
