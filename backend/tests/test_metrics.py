@@ -68,7 +68,6 @@ def test_grade_grammar_errors_falls_back_to_zero_on_malformed_llm_output(monkeyp
 
 
 def test_end_session_persists_metric_snapshot_and_appears_in_history(client: TestClient, scenario):
-    client.post("/api/students/sync", json={"name": "Test Student"})
     start_res = client.post("/api/sessions", json={"scenario_id": scenario.id})
     session_id = start_res.json()["id"]
 

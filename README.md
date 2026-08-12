@@ -2,7 +2,7 @@
 
 Aplicativo de ensino de inglês focado em conversação, com bot de IA adaptado ao nível CEFR do aluno, métricas de evolução e simulações de cenários do cotidiano. Decisões de arquitetura, riscos e modelo de dados: [`docs/architecture.md`](docs/architecture.md).
 
-**Stack 100% open-source / custo zero** (pivô decidido em 2026-08-12, ver seção 1.1 do doc de arquitetura): FastAPI (backend) + React/TypeScript (frontend) + **PostgreSQL** (self-hosted) + **Ollama** (LLM local, open-weight). Autenticação e voz ainda estão em migração de Clerk/Azure para `fastapi-users`/faster-whisper+Piper — nessa fase intermediária, o `.env` ainda tem as chaves antigas (Clerk/Azure) enquanto essas peças não terminam de migrar.
+**Stack 100% open-source / custo zero** (pivô decidido em 2026-08-12, ver seção 1.1 do doc de arquitetura): FastAPI (backend) + React/TypeScript (frontend) + **PostgreSQL** (self-hosted) + **Ollama** (LLM local, open-weight) + **auth própria** (email/senha, `bcrypt` + JWT, sem provedor externo). Só a camada de voz ainda depende do Azure Speech (migração para faster-whisper + Piper pendente) — o `.env` ainda tem essas chaves antigas enquanto essa peça não migra.
 
 ## Pré-requisitos
 
@@ -10,7 +10,7 @@ Aplicativo de ensino de inglês focado em conversação, com bot de IA adaptado 
 - Node.js 20+
 - Docker (para rodar o PostgreSQL local)
 - [Ollama](https://ollama.com) instalado e rodando localmente (LLM open-source, sem chave de API)
-- Chaves de API: Azure Speech, Clerk (não obrigatórias para subir o scaffold — só para as features que ainda dependem delas até a migração terminar)
+- Chave de API do Azure Speech (não obrigatória para subir o scaffold — só para o modo voz, que ainda depende dele até a migração terminar)
 
 ## Backend (`backend/`)
 
@@ -82,20 +82,20 @@ npm run dev
 
 Abre em `http://localhost:5173`. Com o backend rodando, a página mostra o status de conexão com `/api/health`.
 
-## Autenticação (Clerk)
+## Autenticação (própria — email/senha)
 
-1. Crie uma conta/app em [dashboard.clerk.com](https://dashboard.clerk.com).
-2. No dashboard, copie:
-   - **Publishable key** → `frontend/.env` como `VITE_CLERK_PUBLISHABLE_KEY`
-   - **Secret key** → `backend/.env` como `CLERK_SECRET_KEY` (ainda não é usada pelo backend nesta fase — verificação de sessão é feita só via JWKS — mas fica registrada para as próximas integrações, ex. buscar dados de perfil via API do Clerk)
-   - **Frontend API URL** (aparece em *API Keys* ou é `https://<seu-subdomínio>.clerk.accounts.dev`) → monte `CLERK_JWKS_URL` em `backend/.env` como `<frontend-api-url>/.well-known/jwks.json`
-3. Sem essas chaves, o frontend mostra uma tela de "configuração pendente" em vez de quebrar, e o backend recusa qualquer request autenticada com 401 (não há fallback inseguro).
+Sem provedor externo. `Student` é a própria tabela de usuário (`email` + `hashed_password`). Configuração no `.env` do backend:
 
-Fluxo implementado: o usuário clica em "Sign in" (modal do Clerk) → após autenticar, o frontend chama `POST /api/students/sync` com o token de sessão do Clerk → o backend valida o JWT contra o JWKS do Clerk (`app/core/security.py`) e cria/atualiza o `Student` correspondente pelo `clerk_user_id`. `GET /api/students/me` está protegido do mesmo jeito.
+```bash
+SECRET_KEY=...   # gere com: python -c "import secrets; print(secrets.token_urlsafe(48))"
+ACCESS_TOKEN_EXPIRE_MINUTES=20160   # 14 dias
+```
 
-Se o app do Clerk estiver configurado para múltiplas origens além de `http://localhost:5173`, adicione-as em `CLERK_AUTHORIZED_PARTIES` (lista) no `.env` do backend — o backend rejeita tokens cujo `azp` não esteja nessa lista.
+Sem `SECRET_KEY` configurada, os endpoints de auth falham explicitamente (`RuntimeError: SECRET_KEY is not configured`) — não há fallback inseguro.
 
-**Atenção ao testar o build do frontend:** sem `VITE_CLERK_PUBLISHABLE_KEY` definida, `main.tsx` renderiza uma tela de fallback e o Rollup elimina `App.tsx`/`Chat.tsx` do bundle inteiro por dead-code elimination — `npm run build` "passa" mesmo assim, mas não valida a UI de verdade. Para checar a build real, defina uma chave (mesmo que temporária) antes de buildar.
+Fluxo: `POST /api/auth/register` (email, senha, nome) ou `POST /api/auth/login` (email, senha) → backend retorna `{access_token, student}` → frontend guarda o token no `localStorage` (`frontend/src/lib/api.ts`) e manda `Authorization: Bearer <token>` em toda chamada autenticada. `GET /api/students/me` valida o token e devolve o perfil — usado ao recarregar a página para restaurar a sessão. Senhas são hasheadas com `bcrypt`, nunca guardadas em texto puro; tokens são JWT HS256 assinados com `SECRET_KEY`, sem estado no servidor (logout é só apagar o token no cliente).
+
+Registro duplicado (mesmo email) é tratado como corrida real: duas tentativas concorrentes de registro com o mesmo email podem ambas passar pela checagem inicial e tentar inserir — o índice único do banco pega a perdedora, que recebe um 400 limpo em vez de um 500 (`backend/tests/test_auth.py::test_register_recovers_from_concurrent_duplicate_race` reproduz isso de verdade, não só no papel).
 
 ## Bot de conversação (protótipo em texto)
 
@@ -127,8 +127,8 @@ O histórico fica em `GET /api/students/me/metrics` e aparece como uma tabela si
 
 ## Variáveis de ambiente sensíveis
 
-Nenhum `.env` é versionado (ver `.gitignore`) — apenas os `.env.example`. Chaves de Anthropic, Azure Speech e Clerk ficam só localmente ou em secrets do ambiente de deploy.
+Nenhum `.env` é versionado (ver `.gitignore`) — apenas os `.env.example`. `SECRET_KEY`, chave da Azure Speech e (se usada) chave da Anthropic ficam só localmente ou em secrets do ambiente de deploy.
 
 ## Estado atual
 
-Backend FastAPI com modelo de dados completo (SQLAlchemy + Alembic, agora em **PostgreSQL**), protótipo funcional do bot de conversação em texto e voz (um cenário completo, agora rodando em **Ollama local**), e cálculo automático de 3 métricas de evolução por sessão com dashboard básico — tudo testado automaticamente (15 testes) e validado de ponta a ponta no navegador contra o LLM local de verdade. **Migração em andamento (iniciada 2026-08-12) para stack 100% open-source/custo zero** (ver `docs/architecture.md` seção 1.1): banco (Postgres) ✅ e LLM (Ollama) ✅ concluídos; autenticação (Clerk → `fastapi-users`) e voz (Azure Speech → faster-whisper + Piper) ainda pendentes, nessa ordem. Ainda não implementados: promoção de nível CEFR, recomendação de ferramentas, repetição espaçada, gamificação. Backlog priorizado em `docs/architecture.md` (seção 5).
+Backend FastAPI com modelo de dados completo (SQLAlchemy + Alembic, agora em **PostgreSQL**), auth própria (email/senha, sem provedor externo), protótipo funcional do bot de conversação em texto e voz (um cenário completo, agora rodando em **Ollama local**), e cálculo automático de 3 métricas de evolução por sessão com dashboard básico — tudo testado automaticamente (23 testes) e validado de ponta a ponta no navegador (registro, login, persistência de sessão, conversa completa, métricas). **Migração para stack 100% open-source/custo zero** (iniciada 2026-08-12, ver `docs/architecture.md` seção 1.1): banco (Postgres) ✅, LLM (Ollama) ✅ e autenticação (email/senha própria) ✅ concluídos; só falta voz (Azure Speech → faster-whisper + Piper). Ainda não implementados: promoção de nível CEFR, recomendação de ferramentas, repetição espaçada, gamificação. Backlog priorizado em `docs/architecture.md` (seção 5).

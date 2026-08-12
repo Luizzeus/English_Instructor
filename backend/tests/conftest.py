@@ -1,7 +1,7 @@
 """Shared fixtures: in-memory SQLite DB + FastAPI TestClient with auth/LLM mocked.
 
-Lets the test suite exercise the full API layer without a real SQL Server
-instance or live Anthropic/Azure credentials — see docs/architecture.md.
+Lets the test suite exercise the full API layer without a real Postgres
+instance or live Ollama/Anthropic — see docs/architecture.md.
 """
 
 import pytest
@@ -10,15 +10,17 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.api import deps
 from app.api.routes import sessions as sessions_route
-from app.core.security import ClerkUser, get_current_clerk_user
+from app.core.security import hash_password
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.models.enums import CefrLevel
 from app.models.scenario import Scenario
+from app.models.student import Student
 
-CLERK_USER_ID = "test-clerk-user"
+TEST_STUDENT_EMAIL = "test-student@example.com"
 
 
 @pytest.fixture()
@@ -41,21 +43,41 @@ def captured_histories():
 
 
 @pytest.fixture()
-def client(db_session, captured_histories, monkeypatch):
+def student(db_session) -> Student:
+    student = Student(
+        email=TEST_STUDENT_EMAIL,
+        hashed_password=hash_password("not-used-directly-in-tests"),
+        name="Test Student",
+    )
+    db_session.add(student)
+    db_session.commit()
+    db_session.refresh(student)
+    return student
+
+
+@pytest.fixture()
+def raw_client(db_session):
+    """TestClient with only the DB overridden — auth is NOT bypassed. Use this
+    to test /api/auth/* itself; use `client` for routes behind auth."""
+    app.dependency_overrides[get_db] = lambda: db_session
+    yield TestClient(app)
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def client(db_session, student, captured_histories, monkeypatch):
     def fake_generate_reply(scenario, student, history):
         captured_histories.append(len(history))
         return f"Reply #{len(captured_histories)}: tell me more!"
 
     monkeypatch.setattr(sessions_route.conversation, "generate_reply", fake_generate_reply)
     # end_session computes metrics, including a grammar-error grading pass via
-    # Claude — mock it here too so any test that ends a session doesn't need a
-    # real ANTHROPIC_API_KEY. Tests targeting metrics specifically override this.
+    # the LLM — mock it here too so any test that ends a session doesn't need
+    # a real Ollama/Anthropic call. Tests targeting metrics specifically override this.
     monkeypatch.setattr(sessions_route.metrics, "grade_grammar_errors", lambda texts: (0.0, 0))
 
     app.dependency_overrides[get_db] = lambda: db_session
-    app.dependency_overrides[get_current_clerk_user] = lambda: ClerkUser(
-        clerk_user_id=CLERK_USER_ID, session_id="sess_test"
-    )
+    app.dependency_overrides[deps.get_current_student] = lambda: student
 
     yield TestClient(app)
 

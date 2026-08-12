@@ -1,22 +1,17 @@
-import { useAuth } from '@clerk/clerk-react'
 import { useEffect, useState } from 'react'
 import { listMetrics, type MetricSnapshot } from './lib/api'
 
 const cellStyle = { border: '1px solid #ccc', padding: '0.4rem 0.6rem', textAlign: 'left' as const }
 
-export function Metrics({ refreshKey }: { refreshKey: number }) {
-  const { getToken } = useAuth()
+export function Metrics({ token, refreshKey }: { token: string; refreshKey: number }) {
   const [snapshots, setSnapshots] = useState<MetricSnapshot[]>([])
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    getToken().then((token) => {
-      if (!token) return
-      listMetrics(token)
-        .then(setSnapshots)
-        .catch(() => setError('Não foi possível carregar as métricas.'))
-    })
-  }, [getToken, refreshKey])
+    listMetrics(token)
+      .then(setSnapshots)
+      .catch(() => setError('Não foi possível carregar as métricas.'))
+  }, [token, refreshKey])
 
   if (error) return <p>❌ {error}</p>
 

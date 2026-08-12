@@ -31,12 +31,9 @@ class Settings(BaseSettings):
     azure_speech_language: str = "en-US"
     azure_tts_voice: str = "en-US-AriaNeural"
 
-    # Clerk (auth)
-    clerk_publishable_key: str = ""
-    clerk_secret_key: str = ""
-    clerk_jwks_url: str = ""
-    # Origins allowed to present a Clerk session token (checked against the `azp` claim)
-    clerk_authorized_parties: list[str] = ["http://localhost:5173"]
+    # Auth (self-hosted email/password — see docs/architecture.md section 1.1)
+    secret_key: str = ""
+    access_token_expire_minutes: int = 60 * 24 * 14  # 14 days
 
     # Cost controls
     daily_session_limit_minutes: int = 30

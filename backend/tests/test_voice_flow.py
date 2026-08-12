@@ -41,7 +41,6 @@ def mocked_speech(monkeypatch):
 
 
 def _start_voice_session(client: TestClient, scenario: Scenario) -> int:
-    client.post("/api/students/sync", json={"name": "Test Student"})
     start_res = client.post("/api/sessions", json={"scenario_id": scenario.id, "modality": "voice"})
     assert start_res.status_code == 200
     assert start_res.json()["modality"] == "voice"

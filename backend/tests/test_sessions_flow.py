@@ -1,24 +1,20 @@
 """End-to-end test of the text conversation prototype against an in-memory SQLite DB.
 
-Runs without a real SQL Server instance or Anthropic API key: `generate_reply` is
-monkeypatched and DB access is redirected to a throwaway in-memory database via
-FastAPI dependency overrides (see conftest.py). Production still targets SQL
-Server (see docs/architecture.md) — this is a test-only substitution, not an
-architecture change.
+Runs without a real Postgres instance or a live Ollama/Anthropic call:
+`generate_reply` is monkeypatched and DB access is redirected to a throwaway
+in-memory database via FastAPI dependency overrides (see conftest.py).
 """
 
 from fastapi.testclient import TestClient
 
-from app.core.security import ClerkUser, get_current_clerk_user
+from app.api import deps
+from app.core.security import hash_password
 from app.main import app
 from app.models.scenario import Scenario
+from app.models.student import Student
 
 
 def test_full_conversation_flow(client: TestClient, scenario: Scenario, captured_histories):
-    sync_res = client.post("/api/students/sync", json={"name": "Test Student"})
-    assert sync_res.status_code == 200
-    assert sync_res.json()["name"] == "Test Student"
-
     start_res = client.post("/api/sessions", json={"scenario_id": scenario.id})
     assert start_res.status_code == 200
     session_data = start_res.json()
@@ -59,21 +55,28 @@ def test_full_conversation_flow(client: TestClient, scenario: Scenario, captured
     assert closed_res.status_code == 400
 
 
-def test_requires_synced_profile_before_starting_session(client: TestClient, scenario: Scenario):
+def test_rejects_token_for_nonexistent_student(client: TestClient, scenario: Scenario):
+    # A token can outlive the account it points to (e.g. deleted after issuance).
+    app.dependency_overrides[deps.get_current_student_id] = lambda: 999_999
+    del app.dependency_overrides[deps.get_current_student]
+
     res = client.post("/api/sessions", json={"scenario_id": scenario.id})
-    assert res.status_code == 404
+    assert res.status_code == 401
 
 
 def test_cannot_access_another_students_session(client: TestClient, scenario: Scenario, db_session):
-    client.post("/api/students/sync", json={"name": "Owner"})
     start_res = client.post("/api/sessions", json={"scenario_id": scenario.id})
     session_id = start_res.json()["id"]
 
-    # Switch to a different authenticated user mid-test.
-    app.dependency_overrides[get_current_clerk_user] = lambda: ClerkUser(
-        clerk_user_id="another-clerk-user", session_id="sess_other"
+    intruder = Student(
+        email="intruder@example.com", hashed_password=hash_password("x"), name="Intruder"
     )
-    client.post("/api/students/sync", json={"name": "Intruder"})
+    db_session.add(intruder)
+    db_session.commit()
+    db_session.refresh(intruder)
+
+    # Switch to a different authenticated user mid-test.
+    app.dependency_overrides[deps.get_current_student] = lambda: intruder
 
     res = client.get(f"/api/sessions/{session_id}")
     assert res.status_code == 404

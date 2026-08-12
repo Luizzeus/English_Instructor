@@ -1,4 +1,3 @@
-import { useAuth } from '@clerk/clerk-react'
 import { useEffect, useRef, useState } from 'react'
 import {
   base64AudioToObjectUrl,
@@ -20,8 +19,7 @@ function PronunciationBadge({ scores }: { scores: NonNullable<ConversationSessio
   )
 }
 
-export function Chat({ onSessionEnded }: { onSessionEnded?: () => void }) {
-  const { getToken } = useAuth()
+export function Chat({ token, onSessionEnded }: { token: string; onSessionEnded?: () => void }) {
   const [scenarios, setScenarios] = useState<Scenario[]>([])
   const [session, setSession] = useState<ConversationSession | null>(null)
   const [draft, setDraft] = useState('')
@@ -31,18 +29,15 @@ export function Chat({ onSessionEnded }: { onSessionEnded?: () => void }) {
   const recorderRef = useRef<WavRecorder | null>(null)
 
   useEffect(() => {
-    getToken().then((token) => {
-      if (!token) return
-      listScenarios(token).then(setScenarios).catch(() => setError('Não foi possível carregar os cenários.'))
-    })
-  }, [getToken])
+    listScenarios(token)
+      .then(setScenarios)
+      .catch(() => setError('Não foi possível carregar os cenários.'))
+  }, [token])
 
   async function handleStart(scenario: Scenario, modality: 'text' | 'voice') {
     setError(null)
     setBusy(true)
     try {
-      const token = await getToken()
-      if (!token) return
       const newSession = await startSession(token, scenario.id, modality)
       setSession(newSession)
     } catch {
@@ -59,8 +54,6 @@ export function Chat({ onSessionEnded }: { onSessionEnded?: () => void }) {
     const text = draft
     setDraft('')
     try {
-      const token = await getToken()
-      if (!token) return
       const { student_message, bot_message } = await sendMessage(token, session.id, text)
       setSession({ ...session, messages: [...session.messages, student_message, bot_message] })
     } catch {
@@ -88,8 +81,6 @@ export function Chat({ onSessionEnded }: { onSessionEnded?: () => void }) {
       const audioBlob = await recorderRef.current.stop()
       recorderRef.current = null
 
-      const token = await getToken()
-      if (!token) return
       const { student_message, bot_message, bot_audio_base64 } = await sendVoiceMessage(
         token,
         session.id,
@@ -112,8 +103,6 @@ export function Chat({ onSessionEnded }: { onSessionEnded?: () => void }) {
     if (!session) return
     setBusy(true)
     try {
-      const token = await getToken()
-      if (!token) return
       const ended = await endSession(token, session.id)
       setSession(ended)
       onSessionEnded?.()
@@ -189,6 +178,8 @@ export function Chat({ onSessionEnded }: { onSessionEnded?: () => void }) {
           </button>
         </div>
       )}
+
+      {busy && isActive && <p style={{ color: '#555', fontSize: '0.9em' }}>💭 pensando... (pode levar bastante tempo — LLM rodando localmente, sem GPU)</p>}
 
       {error && <p>❌ {error}</p>}
     </div>

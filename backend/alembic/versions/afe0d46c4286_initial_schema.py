@@ -1,8 +1,8 @@
-"""initial schema (postgres)
+"""initial schema
 
-Revision ID: b69e2a2420de
+Revision ID: afe0d46c4286
 Revises: 
-Create Date: 2026-08-12 02:07:24.191057
+Create Date: 2026-08-12 02:47:33.025500
 
 """
 from typing import Sequence, Union
@@ -11,7 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = 'b69e2a2420de'
+revision: str = 'afe0d46c4286'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -31,7 +31,8 @@ def upgrade() -> None:
     )
     op.create_table('students',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
-    sa.Column('clerk_user_id', sa.String(length=255), nullable=False),
+    sa.Column('email', sa.String(length=320), nullable=False),
+    sa.Column('hashed_password', sa.String(length=255), nullable=False),
     sa.Column('name', sa.String(length=255), nullable=False),
     sa.Column('current_cefr_level', sa.Enum('A1', 'A2', 'B1', 'B2', 'C1', 'C2', name='cefrlevel', native_enum=False), nullable=False),
     sa.Column('bot_tone_preference', sa.String(length=50), nullable=False),
@@ -39,7 +40,7 @@ def upgrade() -> None:
     sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
-    op.create_index(op.f('ix_students_clerk_user_id'), 'students', ['clerk_user_id'], unique=True)
+    op.create_index(op.f('ix_students_email'), 'students', ['email'], unique=True)
     op.create_table('cefr_promotion_log',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('student_id', sa.Integer(), nullable=False),
@@ -146,7 +147,7 @@ def downgrade() -> None:
     op.drop_table('sessions')
     op.drop_index(op.f('ix_cefr_promotion_log_student_id'), table_name='cefr_promotion_log')
     op.drop_table('cefr_promotion_log')
-    op.drop_index(op.f('ix_students_clerk_user_id'), table_name='students')
+    op.drop_index(op.f('ix_students_email'), table_name='students')
     op.drop_table('students')
     op.drop_table('scenarios')
     # ### end Alembic commands ###

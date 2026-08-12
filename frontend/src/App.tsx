@@ -1,8 +1,15 @@
-import { SignedIn, SignedOut, SignInButton, UserButton, useAuth, useUser } from '@clerk/clerk-react'
 import { useEffect, useState } from 'react'
 import './App.css'
+import { AuthForm } from './AuthForm'
 import { Chat } from './Chat'
-import { API_BASE_URL, syncStudent, type Student } from './lib/api'
+import {
+  API_BASE_URL,
+  clearStoredToken,
+  getCurrentStudent,
+  getStoredToken,
+  setStoredToken,
+  type Student,
+} from './lib/api'
 import { Metrics } from './Metrics'
 
 type HealthStatus = 'checking' | 'ok' | 'error'
@@ -19,51 +26,39 @@ function useBackendHealth(): HealthStatus {
   return status
 }
 
-function StudentProfile() {
-  const { getToken } = useAuth()
-  const { user } = useUser()
+function App() {
+  const backendStatus = useBackendHealth()
+  const [token, setToken] = useState<string | null>(() => getStoredToken())
   const [student, setStudent] = useState<Student | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [authError, setAuthError] = useState<string | null>(null)
   const [metricsRefreshKey, setMetricsRefreshKey] = useState(0)
 
   useEffect(() => {
-    if (!user) return
-
-    let cancelled = false
-
-    async function loadProfile() {
-      const token = await getToken()
-      if (!token) return
-      try {
-        const synced = await syncStudent(token, user!.fullName ?? user!.username ?? 'Student')
-        if (!cancelled) setStudent(synced)
-      } catch {
-        if (!cancelled) setError('Não foi possível sincronizar o perfil com o backend.')
-      }
+    if (!token) {
+      setStudent(null)
+      return
     }
+    getCurrentStudent(token)
+      .then(setStudent)
+      .catch(() => {
+        clearStoredToken()
+        setToken(null)
+        setAuthError('Sua sessão expirou — entre novamente.')
+      })
+  }, [token])
 
-    loadProfile()
-    return () => {
-      cancelled = true
-    }
-  }, [user, getToken])
+  function handleAuthenticated(newToken: string, newStudent: Student) {
+    setStoredToken(newToken)
+    setToken(newToken)
+    setStudent(newStudent)
+    setAuthError(null)
+  }
 
-  if (error) return <p>❌ {error}</p>
-  if (!student) return <p>sincronizando perfil...</p>
-
-  return (
-    <div>
-      <p>✅ Perfil sincronizado: {student.name}</p>
-      <p>Nível CEFR atual: {student.current_cefr_level}</p>
-      <Chat onSessionEnded={() => setMetricsRefreshKey((k) => k + 1)} />
-      <h2>Evolução</h2>
-      <Metrics refreshKey={metricsRefreshKey} />
-    </div>
-  )
-}
-
-function App() {
-  const backendStatus = useBackendHealth()
+  function handleLogout() {
+    clearStoredToken()
+    setToken(null)
+    setStudent(null)
+  }
 
   return (
     <main style={{ fontFamily: 'sans-serif', padding: '2rem' }}>
@@ -76,14 +71,24 @@ function App() {
         {backendStatus === 'error' && '❌ sem resposta (backend está rodando?)'}
       </p>
 
-      <SignedOut>
-        <SignInButton mode="modal" />
-      </SignedOut>
+      {authError && <p>❌ {authError}</p>}
 
-      <SignedIn>
-        <UserButton />
-        <StudentProfile />
-      </SignedIn>
+      {!token || !student ? (
+        <AuthForm onAuthenticated={handleAuthenticated} />
+      ) : (
+        <div>
+          <p>
+            ✅ Logado como {student.name} ({student.email}){' '}
+            <button type="button" onClick={handleLogout}>
+              Sair
+            </button>
+          </p>
+          <p>Nível CEFR atual: {student.current_cefr_level}</p>
+          <Chat token={token} onSessionEnded={() => setMetricsRefreshKey((k) => k + 1)} />
+          <h2>Evolução</h2>
+          <Metrics token={token} refreshKey={metricsRefreshKey} />
+        </div>
+      )}
     </main>
   )
 }

@@ -2,11 +2,18 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000
 
 export interface Student {
   id: number
+  email: string
   name: string
   current_cefr_level: string
   bot_tone_preference: string
   default_session_minutes: number
   created_at: string
+}
+
+export interface TokenResponse {
+  access_token: string
+  token_type: string
+  student: Student
 }
 
 export interface Scenario {
@@ -70,12 +77,44 @@ async function parseOrThrow<T>(res: Response, action: string): Promise<T> {
   return res.json()
 }
 
-export async function syncStudent(token: string, name: string): Promise<Student> {
-  const res = await authedFetch('/students/sync', token, {
+export async function register(email: string, password: string, name: string): Promise<TokenResponse> {
+  const res = await fetch(`${API_BASE_URL}/auth/register`, {
     method: 'POST',
-    body: JSON.stringify({ name }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password, name }),
   })
-  return parseOrThrow(res, 'Failed to sync student profile')
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.detail ?? `Registration failed: ${res.status}`)
+  }
+  return res.json()
+}
+
+export async function login(email: string, password: string): Promise<TokenResponse> {
+  const res = await fetch(`${API_BASE_URL}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => null)
+    throw new Error(body?.detail ?? `Login failed: ${res.status}`)
+  }
+  return res.json()
+}
+
+const TOKEN_STORAGE_KEY = 'english_instructor_token'
+
+export function getStoredToken(): string | null {
+  return localStorage.getItem(TOKEN_STORAGE_KEY)
+}
+
+export function setStoredToken(token: string): void {
+  localStorage.setItem(TOKEN_STORAGE_KEY, token)
+}
+
+export function clearStoredToken(): void {
+  localStorage.removeItem(TOKEN_STORAGE_KEY)
 }
 
 export async function getCurrentStudent(token: string): Promise<Student> {

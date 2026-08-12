@@ -11,7 +11,8 @@ class Student(Base):
     __tablename__ = "students"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    clerk_user_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
+    hashed_password: Mapped[str] = mapped_column(String(255))
     name: Mapped[str] = mapped_column(String(255))
     current_cefr_level: Mapped[CefrLevel] = mapped_column(
         Enum(CefrLevel, native_enum=False, length=2), default=CefrLevel.A2
