@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import './App.css'
 import { Chat } from './Chat'
 import { API_BASE_URL, syncStudent, type Student } from './lib/api'
+import { Metrics } from './Metrics'
 
 type HealthStatus = 'checking' | 'ok' | 'error'
 
@@ -23,6 +24,7 @@ function StudentProfile() {
   const { user } = useUser()
   const [student, setStudent] = useState<Student | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [metricsRefreshKey, setMetricsRefreshKey] = useState(0)
 
   useEffect(() => {
     if (!user) return
@@ -53,7 +55,9 @@ function StudentProfile() {
     <div>
       <p>✅ Perfil sincronizado: {student.name}</p>
       <p>Nível CEFR atual: {student.current_cefr_level}</p>
-      <Chat />
+      <Chat onSessionEnded={() => setMetricsRefreshKey((k) => k + 1)} />
+      <h2>Evolução</h2>
+      <Metrics refreshKey={metricsRefreshKey} />
     </div>
   )
 }

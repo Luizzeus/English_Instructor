@@ -12,6 +12,13 @@ import azure.cognitiveservices.speech as speechsdk
 from app.core.config import get_settings
 
 _WAV_HEADER_SIZE = 44  # standard PCM WAV header written by our own frontend encoder
+_WAV_SAMPLE_RATE = 16000
+_WAV_BYTES_PER_SAMPLE = 2  # 16-bit mono
+
+
+def wav_duration_seconds(wav_bytes: bytes) -> float:
+    payload_bytes = max(0, len(wav_bytes) - _WAV_HEADER_SIZE)
+    return payload_bytes / (_WAV_SAMPLE_RATE * _WAV_BYTES_PER_SAMPLE)
 
 
 class TranscriptionError(RuntimeError):

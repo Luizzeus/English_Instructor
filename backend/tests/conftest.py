@@ -47,6 +47,10 @@ def client(db_session, captured_histories, monkeypatch):
         return f"Reply #{len(captured_histories)}: tell me more!"
 
     monkeypatch.setattr(sessions_route.conversation, "generate_reply", fake_generate_reply)
+    # end_session computes metrics, including a grammar-error grading pass via
+    # Claude — mock it here too so any test that ends a session doesn't need a
+    # real ANTHROPIC_API_KEY. Tests targeting metrics specifically override this.
+    monkeypatch.setattr(sessions_route.metrics, "grade_grammar_errors", lambda texts: (0.0, 0))
 
     app.dependency_overrides[get_db] = lambda: db_session
     app.dependency_overrides[get_current_clerk_user] = lambda: ClerkUser(

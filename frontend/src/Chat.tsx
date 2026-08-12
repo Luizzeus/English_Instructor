@@ -20,7 +20,7 @@ function PronunciationBadge({ scores }: { scores: NonNullable<ConversationSessio
   )
 }
 
-export function Chat() {
+export function Chat({ onSessionEnded }: { onSessionEnded?: () => void }) {
   const { getToken } = useAuth()
   const [scenarios, setScenarios] = useState<Scenario[]>([])
   const [session, setSession] = useState<ConversationSession | null>(null)
@@ -116,6 +116,7 @@ export function Chat() {
       if (!token) return
       const ended = await endSession(token, session.id)
       setSession(ended)
+      onSessionEnded?.()
     } catch {
       setError('Não foi possível encerrar a sessão.')
     } finally {

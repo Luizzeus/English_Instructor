@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, JSON, String, Text, func
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -17,4 +17,5 @@ class Message(Base):
     audio_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     recast_corrections: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     pronunciation_scores: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    audio_duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

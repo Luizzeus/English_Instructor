@@ -8,6 +8,7 @@ from app.api.deps import get_current_student
 from app.db.session import get_db
 from app.models.enums import MessageAuthor, SessionStatus
 from app.models.message import Message
+from app.models.metric import MetricSnapshot
 from app.models.scenario import Scenario
 from app.models.session import ConversationSession
 from app.models.student import Student
@@ -18,7 +19,7 @@ from app.schemas.session import (
     SessionCreateRequest,
     SessionOut,
 )
-from app.services import conversation, speech
+from app.services import conversation, metrics, speech
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -117,6 +118,7 @@ async def send_voice_message(
         author=MessageAuthor.STUDENT,
         text=transcript,
         pronunciation_scores=pronunciation_scores,
+        audio_duration_seconds=speech.wav_duration_seconds(wav_bytes),
     )
     db.add(student_message)
     db.flush()
@@ -147,6 +149,11 @@ def end_session(
     session = _get_owned_session(db, session_id, student)
     session.status = SessionStatus.COMPLETED
     session.ended_at = datetime.now(timezone.utc)
+
+    session_messages = db.query(Message).filter_by(session_id=session.id).order_by(Message.id).all()
+    snapshot_fields = metrics.build_metric_snapshot_fields(student, session_messages)
+    db.add(MetricSnapshot(student_id=student.id, session_id=session.id, **snapshot_fields))
+
     db.commit()
     db.refresh(session)
     return session

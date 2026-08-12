@@ -57,13 +57,22 @@ Fluxo de voz: cliente grava áudio → upload para backend → Azure STT + Pronu
 3. ~~Integração Clerk (auth) end-to-end (frontend + verificação de JWT no backend).~~ ✅
 4. ~~Protótipo do bot de conversação (texto apenas primeiro, um cenário completo: "small talk profissional") — valida o núcleo antes de acrescentar voz.~~ ✅ `POST /api/sessions`, `POST /api/sessions/{id}/messages`, `POST /api/sessions/{id}/end`; system prompt adaptado ao CEFR do aluno com correção implícita (recast); coberto por `backend/tests/test_sessions_flow.py` (SQLite in-memory, sem depender de SQL Server real nem de chamada real à Anthropic).
 5. ~~Camada de voz: Azure STT (Pronunciation Assessment) + TTS integrados ao mesmo fluxo de conversação.~~ ✅ `POST /api/sessions/{id}/voice-messages` (multipart, WAV 16kHz/16-bit/mono): transcreve + pontua pronúncia (modo unscripted, sem texto de referência) via `app/services/speech.py`, reaproveita o mesmo `conversation.generate_reply`, sintetiza a resposta do bot em áudio (retornado como base64). Frontend grava com `frontend/src/lib/wavRecorder.ts` (Web Audio API + encoder WAV manual — evita depender de GStreamer no backend para decodificar webm/opus do browser). Coberto por `backend/tests/test_voice_flow.py` (Azure mockado, mesmo padrão dos outros testes). **Não testado contra uma conta Azure Speech real** — sem credenciais configuradas neste ambiente, não há como validar a qualidade real da transcrição/avaliação/síntese, só a integração de ponta a ponta no nível de código.
-6. Serviço de métricas: cálculo dos 3 indicadores mais simples primeiro (vocabulário ativo, taxa de erro, fluência) + dashboard básico.
+6. ~~Serviço de métricas: cálculo dos 3 indicadores mais simples primeiro (vocabulário ativo, taxa de erro, fluência) + dashboard básico.~~ ✅ Calculado ao encerrar a sessão (`POST /api/sessions/{id}/end`) e persistido em `MetricSnapshot`; histórico exposto em `GET /api/students/me/metrics` (dashboard simples: tabela em `frontend/src/Metrics.tsx`, sem gráfico nesta primeira versão). Implementado em `app/services/metrics.py` — ver limitações abaixo.
 7. Lógica de promoção de nível CEFR (regras explícitas e auditáveis).
 8. Módulo de recomendação de ferramentas (contextual, justificado).
 9. Repetição espaçada + exercícios variados dentro do diálogo.
 10. Gamificação leve (streak, metas semanais).
 
 Dependências: 2 bloqueia 3-9 (tudo depende do schema). 3 bloqueia qualquer feature multiusuário real. 4 deve ficar estável antes de 5 (adicionar voz em cima de um bot de texto que já funciona, não em paralelo).
+
+### Limitações dos 3 indicadores de métricas (primeira versão)
+
+Nenhum dos três é uma medida linguística validada — são heurísticas propositalmente simples para a primeira versão, documentadas aqui para não serem confundidas com algo mais rigoroso depois:
+
+- **Vocabulário ativo**: contagem de palavras-conteúdo únicas (não stopwords) usadas pelo aluno na sessão — não verifica se foram usadas *corretamente*, só que foram usadas. Tokenização por regex simples, sem lematização (ex.: "run" e "running" contam como duas palavras diferentes).
+- **Taxa de erros gramaticais**: Claude conta erros gramaticais/de vocabulário nas mensagens do aluno numa chamada estruturada dedicada (`grade_grammar_errors`), separada da correção implícita (recast) que o bot já faz durante a própria conversa — o recast não é uma contagem estruturada, só uma reformulação natural. Essa contagem via LLM ainda não foi validada com casos de teste reais contra avaliação humana (risco já registrado na seção 2).
+- **Fluência (palavras/minuto)**: só calculada para turnos de voz, usando a duração real do áudio gravado (`Message.audio_duration_seconds`); é `null` para sessões em texto, porque velocidade de digitação não é fluência de fala.
+- **`estimated_cefr_level` no `MetricSnapshot`**: por enquanto só repete o nível atual do aluno (`Student.current_cefr_level`) — **não é uma estimativa real**. A lógica de estimativa/promoção de nível (item 7 do backlog) ainda precisa ser construída como uma etapa explícita e auditável separada, não inferida silenciosamente aqui.
 
 ### Nota técnica: dead-code elimination em `main.tsx`
 

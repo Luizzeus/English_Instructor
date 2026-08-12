@@ -1,12 +1,9 @@
-from functools import lru_cache
-
-from anthropic import Anthropic
-
 from app.core.config import get_settings
 from app.models.enums import CefrLevel, MessageAuthor
 from app.models.message import Message
 from app.models.scenario import Scenario
 from app.models.student import Student
+from app.services.llm_client import get_anthropic_client
 
 _CEFR_GUIDANCE: dict[CefrLevel, str] = {
     CefrLevel.A1: "very simple present-tense sentences, only the ~500 most common words, one idea per sentence",
@@ -16,14 +13,6 @@ _CEFR_GUIDANCE: dict[CefrLevel, str] = {
     CefrLevel.C1: "advanced vocabulary, native-like phrasing, abstract topics",
     CefrLevel.C2: "near-native range, full idiomatic and stylistic freedom",
 }
-
-
-@lru_cache
-def _get_client() -> Anthropic:
-    settings = get_settings()
-    if not settings.anthropic_api_key:
-        raise RuntimeError("ANTHROPIC_API_KEY is not configured")
-    return Anthropic(api_key=settings.anthropic_api_key)
 
 
 def build_system_prompt(scenario: Scenario, student: Student) -> str:
@@ -58,7 +47,7 @@ def _to_api_messages(history: list[Message]) -> list[dict[str, str]]:
 
 def generate_reply(scenario: Scenario, student: Student, history: list[Message]) -> str:
     settings = get_settings()
-    client = _get_client()
+    client = get_anthropic_client()
 
     response = client.messages.create(
         model=settings.anthropic_model,

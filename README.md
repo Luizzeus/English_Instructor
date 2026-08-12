@@ -86,10 +86,20 @@ Configuração necessária: `AZURE_SPEECH_KEY` + `AZURE_SPEECH_REGION` no `.env`
 
 **Limitação conhecida:** não há credenciais reais do Azure Speech configuradas neste ambiente de desenvolvimento, então o fluxo foi validado com a integração mockada (`backend/tests/test_voice_flow.py`) — a qualidade real da transcrição/avaliação/síntese contra a API do Azure ainda não foi verificada manualmente.
 
+## Métricas de evolução
+
+Ao encerrar uma sessão (`POST /api/sessions/{id}/end`), o backend calcula automaticamente 3 indicadores a partir das mensagens do aluno naquela sessão e salva um `MetricSnapshot`:
+
+- **Vocabulário ativo**: contagem de palavras-conteúdo únicas usadas (heurística por tokenização, sem lematização).
+- **Erros gramaticais por 100 palavras**: Claude conta erros numa chamada estruturada dedicada (`app/services/metrics.py::grade_grammar_errors`), separada da correção implícita que o bot já faz durante a conversa.
+- **Fluência (palavras/min)**: só para sessões de voz, calculada a partir da duração real do áudio gravado — `null` em sessões de texto.
+
+O histórico fica em `GET /api/students/me/metrics` e aparece como uma tabela simples (`frontend/src/Metrics.tsx`, sem gráfico nesta primeira versão) logo abaixo do chat, atualizada automaticamente ao encerrar uma sessão. **Nenhum dos 3 indicadores é uma medida linguística validada** — são heurísticas propositalmente simples para a primeira versão; detalhes e limitações completas em `docs/architecture.md`. O campo `estimated_cefr_level` do snapshot ainda só repete o nível atual do aluno — a lógica real de promoção de nível é o próximo item do backlog.
+
 ## Variáveis de ambiente sensíveis
 
 Nenhum `.env` é versionado (ver `.gitignore`) — apenas os `.env.example`. Chaves de Anthropic, Azure Speech e Clerk ficam só localmente ou em secrets do ambiente de deploy.
 
 ## Estado atual
 
-Backend FastAPI com modelo de dados completo (SQLAlchemy + Alembic), auth Clerk integrada de ponta a ponta, protótipo funcional do bot de conversação em texto e voz (um cenário completo, testado automaticamente com Anthropic/Azure mockados). Ainda não implementados: métricas de evolução, promoção de nível CEFR, recomendação de ferramentas, repetição espaçada, gamificação. Backlog priorizado em `docs/architecture.md` (seção 5).
+Backend FastAPI com modelo de dados completo (SQLAlchemy + Alembic), auth Clerk integrada de ponta a ponta, protótipo funcional do bot de conversação em texto e voz (um cenário completo), e cálculo automático de 3 métricas de evolução por sessão com dashboard básico — tudo testado automaticamente (14 testes, Anthropic/Azure mockados). Ainda não implementados: promoção de nível CEFR, recomendação de ferramentas, repetição espaçada, gamificação. Backlog priorizado em `docs/architecture.md` (seção 5).

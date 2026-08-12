@@ -43,6 +43,17 @@ export interface ConversationSession {
   messages: Message[]
 }
 
+export interface MetricSnapshot {
+  id: number
+  session_id: number
+  recorded_at: string
+  active_vocabulary_count: number
+  grammar_errors_per_100_words: number
+  words_per_minute: number | null
+  avg_syntactic_complexity: number
+  estimated_cefr_level: string
+}
+
 async function authedFetch(path: string, token: string, init?: RequestInit): Promise<Response> {
   return fetch(`${API_BASE_URL}${path}`, {
     ...init,
@@ -128,6 +139,11 @@ export async function sendVoiceMessage(
     body: formData,
   })
   return parseOrThrow(res, 'Failed to send voice message')
+}
+
+export async function listMetrics(token: string): Promise<MetricSnapshot[]> {
+  const res = await authedFetch('/students/me/metrics', token)
+  return parseOrThrow(res, 'Failed to list metrics')
 }
 
 export function base64AudioToObjectUrl(base64: string, mimeType = 'audio/wav'): string {
