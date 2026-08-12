@@ -52,10 +52,10 @@ Fluxo de voz: cliente grava áudio → upload para backend → Azure STT + Pronu
 
 ## 5. Próximos passos propostos (backlog priorizado, fase 1)
 
-1. Scaffold do repo: estrutura de pastas (backend FastAPI, frontend React), git init, configuração de ambiente.
-2. Modelo de dados: schema SQL Server (migrations) para as entidades acima.
-3. Integração Clerk (auth) end-to-end (frontend + verificação de JWT no backend).
-4. Protótipo do bot de conversação (texto apenas primeiro, um cenário completo: ex. "small talk profissional") — valida o núcleo antes de acrescentar voz.
+1. ~~Scaffold do repo: estrutura de pastas (backend FastAPI, frontend React), git init, configuração de ambiente.~~ ✅
+2. ~~Modelo de dados: schema SQL Server (migrations) para as entidades acima.~~ ✅ (modelos SQLAlchemy + Alembic prontos; primeira migration real ainda depende de uma instância SQL Server configurada)
+3. ~~Integração Clerk (auth) end-to-end (frontend + verificação de JWT no backend).~~ ✅
+4. ~~Protótipo do bot de conversação (texto apenas primeiro, um cenário completo: "small talk profissional") — valida o núcleo antes de acrescentar voz.~~ ✅ `POST /api/sessions`, `POST /api/sessions/{id}/messages`, `POST /api/sessions/{id}/end`; system prompt adaptado ao CEFR do aluno com correção implícita (recast); coberto por `backend/tests/test_sessions_flow.py` (SQLite in-memory, sem depender de SQL Server real nem de chamada real à Anthropic).
 5. Camada de voz: Azure STT (Pronunciation Assessment) + TTS integrados ao mesmo fluxo de conversação.
 6. Serviço de métricas: cálculo dos 3 indicadores mais simples primeiro (vocabulário ativo, taxa de erro, fluência) + dashboard básico.
 7. Lógica de promoção de nível CEFR (regras explícitas e auditáveis).
@@ -64,3 +64,7 @@ Fluxo de voz: cliente grava áudio → upload para backend → Azure STT + Pronu
 10. Gamificação leve (streak, metas semanais).
 
 Dependências: 2 bloqueia 3-9 (tudo depende do schema). 3 bloqueia qualquer feature multiusuário real. 4 deve ficar estável antes de 5 (adicionar voz em cima de um bot de texto que já funciona, não em paralelo).
+
+### Nota técnica: dead-code elimination em `main.tsx`
+
+`main.tsx` só renderiza `<App/>` (que importa `Chat.tsx`) dentro do branch `else` de `if (!PUBLISHABLE_KEY)`. Sem `VITE_CLERK_PUBLISHABLE_KEY` definida, o Vite resolve essa variável como `undefined` em build-time e o Rollup elimina esse branch inteiro por dead-code elimination — ou seja, **sem uma chave real (mesmo que só sintaticamente válida) configurada em `frontend/.env`, `npm run build` "passa" mas não bundla `App.tsx`/`Chat.tsx` de verdade**. Isso foi descoberto ao investigar por que o bundle de produção não continha nenhum texto da UI de chat. Para validar builds futuras de fato, defina uma `VITE_CLERK_PUBLISHABLE_KEY` (real ou temporária) antes de checar o conteúdo do bundle — `tsc -b` sozinho já type-checa `App.tsx`/`Chat.tsx` normalmente e pega a maioria dos erros, mas não substitui essa checagem para mudanças que só quebrariam em runtime/bundling.

@@ -26,6 +26,7 @@ Com `DATABASE_URL` apontando para uma instância SQL Server real:
 ```bash
 alembic revision --autogenerate -m "initial schema"
 alembic upgrade head
+python -m app.db.seed   # cria o cenário "Small talk profissional" (idempotente)
 ```
 
 Subir a API:
@@ -35,6 +36,13 @@ uvicorn app.main:app --reload
 ```
 
 Health check: `GET http://localhost:8000/api/health`
+
+Rodar os testes (não precisam de SQL Server nem de chave da Anthropic — usam SQLite in-memory e mockam a chamada ao LLM):
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
 
 ## Frontend (`frontend/`)
 
@@ -60,10 +68,16 @@ Fluxo implementado: o usuário clica em "Sign in" (modal do Clerk) → após aut
 
 Se o app do Clerk estiver configurado para múltiplas origens além de `http://localhost:5173`, adicione-as em `CLERK_AUTHORIZED_PARTIES` (lista) no `.env` do backend — o backend rejeita tokens cujo `azp` não esteja nessa lista.
 
+**Atenção ao testar o build do frontend:** sem `VITE_CLERK_PUBLISHABLE_KEY` definida, `main.tsx` renderiza uma tela de fallback e o Rollup elimina `App.tsx`/`Chat.tsx` do bundle inteiro por dead-code elimination — `npm run build` "passa" mesmo assim, mas não valida a UI de verdade. Para checar a build real, defina uma chave (mesmo que temporária) antes de buildar.
+
+## Bot de conversação (protótipo em texto)
+
+Um cenário completo está funcional de ponta a ponta: "Small talk profissional" (papo antes de uma reunião remota começar). Fluxo: `POST /api/sessions` (inicia sessão, bot manda a mensagem de abertura) → `POST /api/sessions/{id}/messages` (aluno responde, backend monta o histórico completo e chama Claude com um system prompt adaptado ao nível CEFR do aluno, aplicando correção implícita via recast) → `POST /api/sessions/{id}/end`. UI de chat em `frontend/src/Chat.tsx`, serviço de conversação em `backend/app/services/conversation.py`.
+
 ## Variáveis de ambiente sensíveis
 
 Nenhum `.env` é versionado (ver `.gitignore`) — apenas os `.env.example`. Chaves de Anthropic, Azure Speech e Clerk ficam só localmente ou em secrets do ambiente de deploy.
 
 ## Estado atual
 
-Backend FastAPI com modelo de dados completo (SQLAlchemy + Alembic), auth Clerk integrada de ponta a ponta (sign-in no frontend + verificação de JWT via JWKS no backend + sincronização de perfil do aluno), frontend Vite/React conectando ao health check. Ainda não implementados: bot de conversação, camada de voz, métricas, recomendação de ferramentas. Backlog priorizado em `docs/architecture.md` (seção 5).
+Backend FastAPI com modelo de dados completo (SQLAlchemy + Alembic), auth Clerk integrada de ponta a ponta, e um protótipo funcional do bot de conversação em texto (um cenário completo, testado automaticamente). Ainda não implementados: camada de voz, métricas de evolução, promoção de nível CEFR, recomendação de ferramentas, repetição espaçada, gamificação. Backlog priorizado em `docs/architecture.md` (seção 5).

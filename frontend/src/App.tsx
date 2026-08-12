@@ -1,6 +1,7 @@
 import { SignedIn, SignedOut, SignInButton, UserButton, useAuth, useUser } from '@clerk/clerk-react'
 import { useEffect, useState } from 'react'
 import './App.css'
+import { Chat } from './Chat'
 import { API_BASE_URL, syncStudent, type Student } from './lib/api'
 
 type HealthStatus = 'checking' | 'ok' | 'error'
@@ -52,6 +53,7 @@ function StudentProfile() {
     <div>
       <p>✅ Perfil sincronizado: {student.name}</p>
       <p>Nível CEFR atual: {student.current_cefr_level}</p>
+      <Chat />
     </div>
   )
 }
