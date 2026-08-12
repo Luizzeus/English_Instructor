@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -13,7 +14,14 @@ class Settings(BaseSettings):
     # PostgreSQL (open-source, self-hosted — see docs/architecture.md section 1.1)
     database_url: str = "postgresql+psycopg://postgres:postgres@127.0.0.1:5432/english_instructor"
 
-    # Anthropic (conversation bot)
+    # LLM provider (conversation bot + metrics grading) — see docs/architecture.md
+    # section 1.1. "ollama" (default) is local/open-weight/$0; "anthropic" is kept
+    # as a swap-back option, not deleted, in case paid quality is worth it later.
+    llm_provider: Literal["ollama", "anthropic"] = "ollama"
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = "qwen2.5:7b-instruct"
+
+    # Anthropic (conversation bot) — only used when llm_provider="anthropic"
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-5"
 

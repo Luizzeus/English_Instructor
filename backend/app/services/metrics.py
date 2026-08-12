@@ -5,11 +5,11 @@ docs/architecture.md backlog item 6), not validated linguistic measures:
 
 - active_vocabulary_count: unique non-stopword word types the student used —
   not verified to be used *correctly*, just used.
-- grammar_errors_per_100_words: Claude grades the session's student messages
-  as a one-off structured pass (separate from the implicit recast the bot does
-  mid-conversation, which isn't machine-readable). This is a heuristic
-  assessment, not a validated grammar checker — see the "qualidade da
-  correção gramatical automática" risk note in docs/architecture.md.
+- grammar_errors_per_100_words: the configured LLM provider grades the session's
+  student messages as a one-off structured pass (separate from the implicit
+  recast the bot does mid-conversation, which isn't machine-readable). This is
+  a heuristic assessment, not a validated grammar checker — see the "qualidade
+  da correção gramatical automática" risk note in docs/architecture.md.
 - words_per_minute: only computed for voice turns (needs real elapsed time);
   None for text-only sessions, since typing speed isn't spoken fluency.
 
@@ -21,11 +21,10 @@ separate, auditable, rule-based step, not something inferred silently here.
 import json
 import re
 
-from app.core.config import get_settings
 from app.models.enums import MessageAuthor
 from app.models.message import Message
 from app.models.student import Student
-from app.services.llm_client import get_anthropic_client
+from app.services.llm_provider import get_llm_provider
 
 _WORD_RE = re.compile(r"[A-Za-z']+")
 _SENTENCE_SPLIT_RE = re.compile(r"[.!?]+")
@@ -79,13 +78,9 @@ def grade_grammar_errors(texts: list[str]) -> tuple[float, int]:
     if total_words == 0:
         return 0.0, 0
 
-    client = get_anthropic_client()
-    settings = get_settings()
-
+    provider = get_llm_provider()
     numbered = "\n".join(f"{i + 1}. {t}" for i, t in enumerate(texts))
-    response = client.messages.create(
-        model=settings.anthropic_model,
-        max_tokens=100,
+    raw_text = provider.generate(
         system=(
             "You are a strict but fair English grammar and word-choice error counter used for "
             "internal learning analytics. Count the total number of grammar or word-choice errors "
@@ -93,9 +88,10 @@ def grade_grammar_errors(texts: list[str]) -> tuple[float, int]:
             '{"total_errors": 3} — no explanation, no markdown, no other text.'
         ),
         messages=[{"role": "user", "content": numbered}],
+        max_tokens=100,
     )
 
-    total_errors = _parse_total_errors(response.content[0].text)
+    total_errors = _parse_total_errors(raw_text)
     return (total_errors / total_words) * 100, total_errors
 
 

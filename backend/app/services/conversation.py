@@ -1,9 +1,8 @@
-from app.core.config import get_settings
 from app.models.enums import CefrLevel, MessageAuthor
 from app.models.message import Message
 from app.models.scenario import Scenario
 from app.models.student import Student
-from app.services.llm_client import get_anthropic_client
+from app.services.llm_provider import get_llm_provider
 
 _CEFR_GUIDANCE: dict[CefrLevel, str] = {
     CefrLevel.A1: "very simple present-tense sentences, only the ~500 most common words, one idea per sentence",
@@ -46,13 +45,8 @@ def _to_api_messages(history: list[Message]) -> list[dict[str, str]]:
 
 
 def generate_reply(scenario: Scenario, student: Student, history: list[Message]) -> str:
-    settings = get_settings()
-    client = get_anthropic_client()
-
-    response = client.messages.create(
-        model=settings.anthropic_model,
-        max_tokens=400,
+    provider = get_llm_provider()
+    return provider.generate(
         system=build_system_prompt(scenario, student),
         messages=_to_api_messages(history),
     )
-    return response.content[0].text

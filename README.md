@@ -2,14 +2,15 @@
 
 Aplicativo de ensino de inglês focado em conversação, com bot de IA adaptado ao nível CEFR do aluno, métricas de evolução e simulações de cenários do cotidiano. Decisões de arquitetura, riscos e modelo de dados: [`docs/architecture.md`](docs/architecture.md).
 
-**Stack 100% open-source / custo zero** (pivô decidido em 2026-08-12, ver seção 1.1 do doc de arquitetura): FastAPI (backend) + React/TypeScript (frontend) + **PostgreSQL** (self-hosted). Bot de conversação, autenticação e voz estão em migração de Claude/Clerk/Azure para Ollama/`fastapi-users`/faster-whisper+Piper — nesta fase intermediária, o `.env` ainda tem as chaves antigas (Anthropic/Clerk/Azure) enquanto a migração dessas peças não termina.
+**Stack 100% open-source / custo zero** (pivô decidido em 2026-08-12, ver seção 1.1 do doc de arquitetura): FastAPI (backend) + React/TypeScript (frontend) + **PostgreSQL** (self-hosted) + **Ollama** (LLM local, open-weight). Autenticação e voz ainda estão em migração de Clerk/Azure para `fastapi-users`/faster-whisper+Piper — nessa fase intermediária, o `.env` ainda tem as chaves antigas (Clerk/Azure) enquanto essas peças não terminam de migrar.
 
 ## Pré-requisitos
 
 - Python 3.12+ (testado em 3.14)
 - Node.js 20+
 - Docker (para rodar o PostgreSQL local)
-- Chaves de API: Anthropic, Azure Speech, Clerk (não obrigatórias para subir o scaffold — só para as features que ainda dependem delas até a migração terminar)
+- [Ollama](https://ollama.com) instalado e rodando localmente (LLM open-source, sem chave de API)
+- Chaves de API: Azure Speech, Clerk (não obrigatórias para subir o scaffold — só para as features que ainda dependem delas até a migração terminar)
 
 ## Backend (`backend/`)
 
@@ -47,12 +48,28 @@ uvicorn app.main:app --reload
 
 Health check: `GET http://localhost:8000/api/health`
 
-Rodar os testes (não precisam de Postgres nem de chave da Anthropic — usam SQLite in-memory e mockam a chamada ao LLM):
+Rodar os testes (não precisam de Postgres nem de Ollama rodando — usam SQLite in-memory e mockam a chamada ao LLM):
 
 ```bash
 pip install -r requirements-dev.txt
 pytest
 ```
+
+## LLM (Ollama, local)
+
+1. Instale o [Ollama](https://ollama.com/download) — no Windows, `winget install Ollama.Ollama`.
+2. Baixe o modelo usado por padrão: `ollama pull qwen2.5:7b-instruct` (~4.7GB, licença Apache 2.0).
+3. O serviço do Ollama já sobe sozinho em `http://127.0.0.1:11434` depois de instalado (confirme com `curl http://127.0.0.1:11434/api/version`).
+
+Configuração no `.env` do backend (valores padrão, normalmente não precisa mexer):
+
+```bash
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen2.5:7b-instruct
+```
+
+**Trade-off real, medido nesta máquina (sem GPU dedicada):** uma resposta curta leva **~20 segundos** rodando em CPU — bem mais lento que uma API paga, e a qualidade das correções/adaptação de nível é mais simples que a de um modelo maior. Aceito deliberadamente em troca de custo zero e não depender de nenhum provedor pago (ver `docs/architecture.md` seção 1.1). Se algum dia fizer sentido pagar por qualidade/velocidade, o código do provedor Anthropic continua disponível — troque `LLM_PROVIDER=anthropic` no `.env` e preencha `ANTHROPIC_API_KEY`, nada mais muda.
 
 ## Frontend (`frontend/`)
 
@@ -82,7 +99,9 @@ Se o app do Clerk estiver configurado para múltiplas origens além de `http://l
 
 ## Bot de conversação (protótipo em texto)
 
-Um cenário completo está funcional de ponta a ponta: "Small talk profissional" (papo antes de uma reunião remota começar). Fluxo: `POST /api/sessions` (inicia sessão, bot manda a mensagem de abertura) → `POST /api/sessions/{id}/messages` (aluno responde, backend monta o histórico completo e chama Claude com um system prompt adaptado ao nível CEFR do aluno, aplicando correção implícita via recast) → `POST /api/sessions/{id}/end`. UI de chat em `frontend/src/Chat.tsx`, serviço de conversação em `backend/app/services/conversation.py`.
+Um cenário completo está funcional de ponta a ponta: "Small talk profissional" (papo antes de uma reunião remota começar). Fluxo: `POST /api/sessions` (inicia sessão, bot manda a mensagem de abertura) → `POST /api/sessions/{id}/messages` (aluno responde, backend monta o histórico completo e chama o LLM configurado com um system prompt adaptado ao nível CEFR do aluno, aplicando correção implícita via recast) → `POST /api/sessions/{id}/end`. UI de chat em `frontend/src/Chat.tsx`, serviço de conversação em `backend/app/services/conversation.py`.
+
+O provedor de LLM é abstraído em `backend/app/services/providers/` (`LLMProvider`, `AnthropicProvider`, `OllamaProvider`) e escolhido via `LLM_PROVIDER` no `.env` — troca de provedor não exige mudar `conversation.py` nem `metrics.py`.
 
 ## Camada de voz (Azure AI Speech)
 
@@ -101,7 +120,7 @@ Configuração necessária: `AZURE_SPEECH_KEY` + `AZURE_SPEECH_REGION` no `.env`
 Ao encerrar uma sessão (`POST /api/sessions/{id}/end`), o backend calcula automaticamente 3 indicadores a partir das mensagens do aluno naquela sessão e salva um `MetricSnapshot`:
 
 - **Vocabulário ativo**: contagem de palavras-conteúdo únicas usadas (heurística por tokenização, sem lematização).
-- **Erros gramaticais por 100 palavras**: Claude conta erros numa chamada estruturada dedicada (`app/services/metrics.py::grade_grammar_errors`), separada da correção implícita que o bot já faz durante a conversa.
+- **Erros gramaticais por 100 palavras**: o LLM configurado conta erros numa chamada estruturada dedicada (`app/services/metrics.py::grade_grammar_errors`), separada da correção implícita que o bot já faz durante a conversa.
 - **Fluência (palavras/min)**: só para sessões de voz, calculada a partir da duração real do áudio gravado — `null` em sessões de texto.
 
 O histórico fica em `GET /api/students/me/metrics` e aparece como uma tabela simples (`frontend/src/Metrics.tsx`, sem gráfico nesta primeira versão) logo abaixo do chat, atualizada automaticamente ao encerrar uma sessão. **Nenhum dos 3 indicadores é uma medida linguística validada** — são heurísticas propositalmente simples para a primeira versão; detalhes e limitações completas em `docs/architecture.md`. O campo `estimated_cefr_level` do snapshot ainda só repete o nível atual do aluno — a lógica real de promoção de nível é o próximo item do backlog.
@@ -112,4 +131,4 @@ Nenhum `.env` é versionado (ver `.gitignore`) — apenas os `.env.example`. Cha
 
 ## Estado atual
 
-Backend FastAPI com modelo de dados completo (SQLAlchemy + Alembic, agora em **PostgreSQL**), protótipo funcional do bot de conversação em texto e voz (um cenário completo), e cálculo automático de 3 métricas de evolução por sessão com dashboard básico — tudo testado automaticamente (15 testes). **Migração em andamento (2026-08-12) para stack 100% open-source/custo zero** (ver `docs/architecture.md` seção 1.1): banco já migrado para PostgreSQL; LLM (Claude → Ollama local), autenticação (Clerk → `fastapi-users`) e voz (Azure Speech → faster-whisper + Piper) ainda pendentes, nessa ordem. Ainda não implementados: promoção de nível CEFR, recomendação de ferramentas, repetição espaçada, gamificação. Backlog priorizado em `docs/architecture.md` (seção 5).
+Backend FastAPI com modelo de dados completo (SQLAlchemy + Alembic, agora em **PostgreSQL**), protótipo funcional do bot de conversação em texto e voz (um cenário completo, agora rodando em **Ollama local**), e cálculo automático de 3 métricas de evolução por sessão com dashboard básico — tudo testado automaticamente (15 testes) e validado de ponta a ponta no navegador contra o LLM local de verdade. **Migração em andamento (iniciada 2026-08-12) para stack 100% open-source/custo zero** (ver `docs/architecture.md` seção 1.1): banco (Postgres) ✅ e LLM (Ollama) ✅ concluídos; autenticação (Clerk → `fastapi-users`) e voz (Azure Speech → faster-whisper + Piper) ainda pendentes, nessa ordem. Ainda não implementados: promoção de nível CEFR, recomendação de ferramentas, repetição espaçada, gamificação. Backlog priorizado em `docs/architecture.md` (seção 5).

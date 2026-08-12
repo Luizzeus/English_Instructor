@@ -42,9 +42,8 @@ def test_compute_fluency_wpm_returns_none_without_voice_turns():
 
 
 def test_grade_grammar_errors_uses_llm_and_computes_rate(monkeypatch):
-    fake_response = SimpleNamespace(content=[SimpleNamespace(text='{"total_errors": 2}')])
-    fake_client = SimpleNamespace(messages=SimpleNamespace(create=lambda **kwargs: fake_response))
-    monkeypatch.setattr(metrics, "get_anthropic_client", lambda: fake_client)
+    fake_provider = SimpleNamespace(generate=lambda **kwargs: '{"total_errors": 2}')
+    monkeypatch.setattr(metrics, "get_llm_provider", lambda: fake_provider)
 
     texts = ["This is five words here", "And this is five more"]  # 10 words total
     rate, total_errors = metrics.grade_grammar_errors(texts)
@@ -55,16 +54,15 @@ def test_grade_grammar_errors_uses_llm_and_computes_rate(monkeypatch):
 
 def test_grade_grammar_errors_skips_llm_call_when_no_words(monkeypatch):
     def fail_if_called():
-        raise AssertionError("should not call Anthropic for empty input")
+        raise AssertionError("should not call the LLM provider for empty input")
 
-    monkeypatch.setattr(metrics, "get_anthropic_client", fail_if_called)
+    monkeypatch.setattr(metrics, "get_llm_provider", fail_if_called)
     assert metrics.grade_grammar_errors([]) == (0.0, 0)
 
 
 def test_grade_grammar_errors_falls_back_to_zero_on_malformed_llm_output(monkeypatch):
-    fake_response = SimpleNamespace(content=[SimpleNamespace(text="not json at all")])
-    fake_client = SimpleNamespace(messages=SimpleNamespace(create=lambda **kwargs: fake_response))
-    monkeypatch.setattr(metrics, "get_anthropic_client", lambda: fake_client)
+    fake_provider = SimpleNamespace(generate=lambda **kwargs: "not json at all")
+    monkeypatch.setattr(metrics, "get_llm_provider", lambda: fake_provider)
 
     assert metrics.grade_grammar_errors(["some words here"]) == (0.0, 0)
 
